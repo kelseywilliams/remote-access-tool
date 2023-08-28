@@ -1,38 +1,23 @@
-import numpy as np
-import cv2
-from mss import mss
-from PIL import Image
+import asyncio
+import mss
 from screeninfo import get_monitors
-import socket
+import time
 
-# Establish connection to server
-host = input("Host:")
-port = input("Port:")
+async def main():
+    reader, writer = await asyncio.open_connection("127.0.0.1", 8080)
+    monitors = get_monitors()
+    monitor = monitors[0]
+    bounding_box = {"top":0, "left":0, "width":monitor.width, "height":monitor.height}
+    sct = mss.mss()
+    while True:
+        sct_img = sct.grab(bounding_box)
+        sct_img = mss.tools.to_png(sct_img.rgb, sct_img.size)
+        img_size = sct_img.__sizeof__()
+        print(img_size)
+        writer.write(sct_img)
+        writer.write("\n".encode())
+        await writer.drain()
+        time.sleep(15)
 
-with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as stream:
-    stream.bind((Host, Port))
-    s.listen()
-    conn, addr = s.accept()
-    with conn:
-        print(f"Connected by {addr}")
+asyncio.run(main())
 
-monitors = get_monitors()
-monitor = 0
-
-if len(monitors) > 1:
-    monitor = input(f"{len(monitors)} screens have been detected. {monitors}\n Please choose a screen number.")
-
-width = monitors[monitor].width
-height = monitors[monitor].height
-
-bounding_box = {'top': 0,'left': 0, 'width': width, 'height': height}
-
-sct = mss()
-
-while True:
-    sct_img = sct.grab(bounding_box)
-    cv2.imshow('screen', np.array(sct_img))
-
-    if(cv2.waitKey(1) & 0xFF) == ord('q'):
-        cv2.destroyAllWindows()
-        break

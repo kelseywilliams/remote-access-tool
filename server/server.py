@@ -1,60 +1,44 @@
-import sys
 import socket
-import selectors
-import types
+import asyncio
+import cv2
+import numpy as np
+from typing import Deque, DefaultDict, Dict
+import mss
+from screeninfo import get_monitors
+host = "127.0.0.1"
+port = 8080
 
-sel = selectors.DefaultSelector()
+def show_image(data):
+    # read image as an numpy array
+    image = np.asarray(bytearray(data), dtype="uint8")
+        
+    # use imdecode function
+    image = cv2.imdecode(image, cv2.IMREAD_COLOR)
 
+    cv2.imshow("screen", image)
+    if(cv2.waitKey(1) & 0xFF) == ord("q"):
+        cv2.destroyAllWindows()
 
-def accept_wrapper(sock):
-    conn, addr = sock.accept()  # Should be ready to read
-    print(f"Accepted connection from {addr}")
-    conn.setblocking(False)
-    data = types.SimpleNamespace(addr=addr, inb=b"", outb=b"")
-    events = selectors.EVENT_READ | selectors.EVENT_WRITE
-    sel.register(conn, events, data=data)
+async def client_connected(reader, writer):
+    addr = writer.get_extra_info("peername")
+    print(f"{addr} has connected.")
 
-
-def service_connection(key, mask):
-    sock = key.fileobj
-    data = key.data
-    if mask & selectors.EVENT_READ:
-        recv_data = sock.recv(1024)  # Should be ready to read
-        if recv_data:
-            data.outb += recv_data
-        else:
-            print(f"Closing connection to {data.addr}")
-            sel.unregister(sock)
-            sock.close()
-    if mask & selectors.EVENT_WRITE:
-        if data.outb:
-            print(f"Echoing {data.outb!r} to {data.addr}")
-            sent = sock.send(data.outb)  # Should be ready to write
-            data.outb = data.outb[sent:]
-
-
-if len(sys.argv) != 3:
-    print(f"Usage: {sys.argv[0]} <host> <port>")
-    sys.exit(1)
-
-host, port = sys.argv[1], int(sys.argv[2])
-lsock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-lsock.bind((host, port))
-lsock.listen()
-print(f"Listening on {(host, port)}")
-lsock.setblocking(False)
-sel.register(lsock, selectors.EVENT_READ, data=None)
-
-try:
     while True:
-        events = sel.select(timeout=None)
-        for key, mask in events:
-            if key.data is None:
-                accept_wrapper(key.fileobj)
-            else:
-                service_connection(key, mask)
-        for
-except KeyboardInterrupt:
-    print("Caught keyboard interrupt, exiting")
-finally:
-    sel.close()
+        recvd = b""
+        while data := await reader.readline():
+            recvd = recvd + data 
+            print(data)
+        recvd = recvd[:-1]
+        print(f"Total:{recvd.__sizeof__()}")
+
+        show_image(data) 
+        
+async def main():
+    server = await asyncio.start_server(client_connected, host, port)
+    addrs = ", ".join(str(sock.getsockname()) for sock in server.sockets)
+    print(f"Serving on {addrs}")
+
+    async with server:
+        await server.serve_forever()
+
+asyncio.run(main())
