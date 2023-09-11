@@ -1,0 +1,6 @@
+asyncio
+mss
+screeninfo
+numpy
+websockets
+logging

@@ -1,3 +1,7 @@
+# Ignore pyinstallers files
 build
-*spec
+__pycache__
+*.spec
 dist
+# Ignore hidden folders
+.*
