@@ -1,14 +1,20 @@
 import asyncio
-import websockets
-from websockets import WebSocketClientProtocol
+from websockets import client as ws
+from websockets.client import WebSocketClientProtocol
+from websockets.exceptions import ConnectionClosed
 import mss
 from screeninfo import get_monitors
 import numpy as np
 import sys
 import logging
-from time import time
+import zlib
+import cv2
+from PIL import Image
+import json
+
 np.set_printoptions(threshold=sys.maxsize)
 
+# TODO Set timeouts properly and attempt reconnect.  Sometimes random huge pieces of data jam the connection
 class Client:
     def __init__(self, host, port):
         self.host = host
@@ -16,7 +22,7 @@ class Client:
         self.uri = f"ws://{self.host}:{self.port}"
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
-        self.logger = _create_logger()
+        self.logger = create_logger()
         self._server_timeout = 5
         self._wake_up_task = None
     def start(self):
@@ -31,24 +37,36 @@ class Client:
             self.exit()
 
     async def connect(self):
-        ws_client = await websockets.connect(self.uri)
+        ws_client = await ws.connect(self.uri)
         self.logger.info(f"Connected to {self.host}:{self.port}")
         keep_alive_task = asyncio.ensure_future(self.keep_alive(ws_client))
         try:
             await self.handler(ws_client)
-        except websockets.ConnectionClosed:
+        except ConnectionClosed:
             keep_alive_task.cancel()
             await self.disconnect(ws_client)
     
     async def handler(self, server: WebSocketClientProtocol):
+        monitors = get_monitors()
+        monitor = monitors[0]
+        bounding_box = {"top":0, "left":0, "width":monitor.width, "height":monitor.height}
+        print(f"{monitor.width}x{monitor.height}")
+        sct = mss.mss()
         while True:
-            message = str(time())
+            # Send resolution
+            res = f"{monitor.width}x{monitor.height}"
+            await server.send(res)
+             # Grab screen image
+            frame = sct.grab(bounding_box)
+            frame_raw = frame.raw
+            message = zlib.compress(frame_raw)
             await server.send(message)
-            self.logger.info(f"Sent {message} to {server.remote_address}")
+            self.logger.info(f"Sent {sys.getsizeof(message)} to {server.remote_address}")
+
     
     async def disconnect(self, server):
         await server.close()
-        self.logger.info(f"Disconnected from server at {self.host}:{self.port}")
+        self.logger.debug(f"Disconnected from server at {self.host}:{self.port}:Code {server.close_code}", stack_info=False)
         
     async def keep_alive(self, server: WebSocketClientProtocol):
         while True:
@@ -67,14 +85,11 @@ class Client:
         except asyncio.CancelledError:
             self.loop.close()
 
-def _create_logger():
-    logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger("remote-access-tool.server")
+def create_logger():
+    fmt="%(pathname)s:%(funcName)s():%(lineno)i: %(message)s"
+    logging.basicConfig(level=logging.INFO, format=fmt)
+    logger = logging.getLogger("remote-access-tool.client")
     logger.setLevel(logging.INFO)
-    # ws_logger is never used
-    ws_logger = logging.getLogger('websockets.server')
-    ws_logger.setLevel(logging.ERROR)
-    ws_logger.addHandler(logging.StreamHandler())
     return logger
 
 async def _wake_up():
@@ -82,7 +97,9 @@ async def _wake_up():
         await asyncio.sleep(1)
 
 def main():
-    client = Client("localhost", 80)
+    host = input("host:")
+    port = int(input("port:"))
+    client = Client(host, port)
     client.start()
 
 if __name__ == "__main__":

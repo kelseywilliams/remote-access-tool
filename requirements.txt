@@ -4,3 +4,5 @@ screeninfo
 numpy
 websockets
 logging
+opencv-python
+Pillow
